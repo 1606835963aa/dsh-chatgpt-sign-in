@@ -1,0 +1,5 @@
+- insert:
+    - id: chatgpt-sign-in
+      name: '@local/dsh-chatgpt-sign-in'
+      config:
+        stateDir: !!js (process.env.DSH_HOME ?? process.env.HOME + '/.dsh') + '/chatgpt-sign-in'
