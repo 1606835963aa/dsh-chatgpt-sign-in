@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-chatgpt-sign-in",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "description": "在 DeepSeek Harness 登录 ChatGPT 并使用订阅模型",

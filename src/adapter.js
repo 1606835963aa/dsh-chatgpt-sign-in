@@ -2,15 +2,16 @@ import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 
 export const ROUTE = 'chatgpt-sign-in'
 export const LABEL = 'ChatGPT 订阅'
 const UPSTREAM_ROUTE = 'openai'
+const GPT_62_SOL = 'gpt-6.2-sol'
 const GPT_62_MODELS = new Map([
   ['gpt-6.2-astra', { fallbackId: 'gpt-6-astra', contextLimit: 1_050_000 }],
-  ['gpt-6.2-sol', { fallbackId: 'gpt-6-sol', contextLimit: 1_050_000 }],
+  [GPT_62_SOL, { fallbackId: 'gpt-6-sol', contextLimit: 1_050_000 }],
 ])
 
 const requireFromHost = createRequire(import.meta.resolve('@deepseek-ai/dsh-llm-pi-ai/package.json'))
@@ -23,6 +24,14 @@ const [{ openaiProvider }, { InMemoryCredentialStore, defaultProviderAuthContext
   import(pathToFileURL(join(piDirectory, 'providers', 'openai.js')).href),
   import(pathToFileURL(join(piDirectory, 'index.js')).href),
 ])
+
+function toUpstreamOptions(options) {
+  const upstream = { ...options, provider: UPSTREAM_ROUTE }
+  if (options.model === GPT_62_SOL && options.purpose === 'compaction' && options.reasoningEffort === undefined) {
+    upstream.reasoningEffort = ReasoningEffortId('low')
+  }
+  return upstream
+}
 
 export function createAdapter(auth, getCatalog, resolveAttachments, fetch, modelContextWindows = {}) {
   const catalog = openaiProvider()
@@ -48,7 +57,12 @@ export function createAdapter(auth, getCatalog, resolveAttachments, fetch, model
         const contextWindow = configuredContext === undefined
           ? descriptor.contextWindow
           : Math.min(configuredContext, metadata?.contextLimit ?? descriptor.contextWindow)
-        return [{ ...descriptor, id: model.slug, name: model.displayName, contextWindow }]
+        const resolved = { ...descriptor, id: model.slug, name: model.displayName, contextWindow }
+        // GPT-6.2 Sol requires reasoning. Its fallback descriptor still offers `off`.
+        if (model.slug === GPT_62_SOL) {
+          resolved.thinkingLevelMap = { ...descriptor.thinkingLevelMap, off: null }
+        }
+        return [resolved]
       })
       snapshot = new Map([[UPSTREAM_ROUTE, {
         provider: UPSTREAM_ROUTE,
@@ -101,12 +115,12 @@ export function createAdapter(auth, getCatalog, resolveAttachments, fetch, model
       return {
         ...call,
         model: { ...call.model, provider: ROUTE },
-        stream: options => call.stream({ ...options, provider: UPSTREAM_ROUTE }),
+        stream: options => call.stream(toUpstreamOptions(options)),
       }
     }
 
     stream(options) {
-      return native.stream({ ...options, provider: UPSTREAM_ROUTE })
+      return native.stream(toUpstreamOptions(options))
     }
 
     imageRequestTarget(_provider, model, image) {
